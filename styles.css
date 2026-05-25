@@ -191,6 +191,10 @@ body::before {
   color: #ffb8c6;
 }
 
+.dashboard-state[data-state="warning"] {
+  color: #ffe4b8;
+}
+
 .hero-stat {
   display: grid;
   align-content: center;
@@ -302,7 +306,51 @@ body::before {
 }
 
 .trend-chart {
+  position: relative;
   min-height: 340px;
+}
+
+.trend-hit-area {
+  cursor: crosshair;
+}
+
+.trend-point-target {
+  cursor: pointer;
+}
+
+.trend-point-target:focus-visible {
+  outline: none;
+}
+
+.trend-tooltip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 12px));
+  pointer-events: none;
+  min-width: 10rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(5, 14, 23, 0.92);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.36);
+  z-index: 2;
+}
+
+.trend-tooltip-title {
+  font-size: 0.78rem;
+  color: #b5c8ea;
+}
+
+.trend-tooltip-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #eef5ff;
+  margin-top: 0.18rem;
+}
+
+.trend-tooltip-meta {
+  margin-top: 0.15rem;
+  font-size: 0.74rem;
+  color: #93a9cf;
 }
 
 .chart-legend {
@@ -421,6 +469,37 @@ body::before {
   aspect-ratio: 1000 / 520;
   height: auto;
   display: block;
+}
+
+.map-region {
+  cursor: pointer;
+}
+
+.map-region .map-label-box,
+.map-region .map-bubble,
+.map-region .map-pulse,
+.map-region .map-connector {
+  transition: opacity 150ms ease, stroke-width 150ms ease, transform 150ms ease;
+}
+
+.map-region.active .map-label-box,
+.map-region:focus-visible .map-label-box {
+  stroke-width: 2;
+}
+
+.map-region.active .map-bubble,
+.map-region:focus-visible .map-bubble {
+  fill-opacity: 0.46;
+}
+
+.map-region.active .map-pulse,
+.map-region:focus-visible .map-pulse {
+  stroke-opacity: 0.32;
+}
+
+.map-region.active .map-connector,
+.map-region:focus-visible .map-connector {
+  stroke-opacity: 0.7;
 }
 
 .region-list,

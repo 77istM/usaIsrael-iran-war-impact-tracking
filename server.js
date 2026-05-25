@@ -20,6 +20,7 @@ loadDotEnv(path.join(__dirname, ".env"));
 const PORT = Number(process.env.PORT || 3000);
 const FRED_API_KEY = process.env.FRED_API_KEY || "";
 const EIA_API_KEY = process.env.EIA_API_KEY || "";
+const FETCH_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS || 8000);
 const CACHE_DIR = path.join(__dirname, ".cache");
 const CACHE_FILE = path.join(CACHE_DIR, "dashboard-data.json");
 const sampleSeriesById = new Map(sampleSeriesCatalog.map((series) => [series.id, series]));
@@ -117,6 +118,7 @@ async function writeCachedSnapshot(snapshot) {
 }
 
 function buildSampleSnapshot(note) {
+  const nowIso = new Date().toISOString();
   const sampleSeries = sampleSeriesCatalog.map((series) => ({
     ...series,
     source: "sample",
@@ -128,7 +130,7 @@ function buildSampleSnapshot(note) {
   return {
     appMeta: {
       ...sampleAppMeta,
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
       sourceLabel: "Sample cache",
       liveCoverage: 0,
       marketOpen: isUSMarketOpen(new Date()),
@@ -142,9 +144,43 @@ function buildSampleSnapshot(note) {
     scenarioDefaults,
     alerts,
     cache: {
-      generatedAt: new Date().toISOString(),
+      generatedAt: nowIso,
       liveCoverage: 0,
       note,
+    },
+  };
+}
+
+function withReliabilityMeta(snapshot, { attemptedAt, refreshError = "" } = {}) {
+  const referenceIso = snapshot?.cache?.generatedAt || snapshot?.appMeta?.updatedAt || new Date().toISOString();
+  const refreshCadenceMinutes = Number(snapshot?.appMeta?.refreshCadenceMinutes) || 120;
+  const staleThresholdMinutes = Math.max(refreshCadenceMinutes * 2, refreshCadenceMinutes + 10);
+  const ageMinutes = Math.max(0, Math.round((Date.now() - new Date(referenceIso).getTime()) / 60000));
+  const isStale = ageMinutes >= staleThresholdMinutes;
+
+  const reliabilityNote = isStale
+    ? `Snapshot is ${ageMinutes} minutes old (stale threshold ${staleThresholdMinutes} minutes).`
+    : `Snapshot age is ${ageMinutes} minutes.`;
+
+  return {
+    ...snapshot,
+    appMeta: {
+      ...snapshot.appMeta,
+      updatedAt: referenceIso,
+      dataAsOf: referenceIso,
+      lastRefreshAttemptAt: attemptedAt || new Date().toISOString(),
+      staleThresholdMinutes,
+      snapshotAgeMinutes: ageMinutes,
+      staleData: isStale,
+      reliabilityNote,
+      refreshError: refreshError || snapshot.appMeta?.refreshError || "",
+    },
+    cache: {
+      ...(snapshot.cache || {}),
+      generatedAt: snapshot?.cache?.generatedAt || referenceIso,
+      staleData: isStale,
+      snapshotAgeMinutes: ageMinutes,
+      staleThresholdMinutes,
     },
   };
 }
@@ -154,6 +190,7 @@ async function refreshSnapshot(force = false) {
     return currentSnapshot;
   }
 
+  const attemptedAt = new Date().toISOString();
   try {
     const liveResults = [];
     for (const source of liveSeriesSources) {
@@ -172,10 +209,11 @@ async function refreshSnapshot(force = false) {
       };
     });
 
-    currentSnapshot = {
+    const generatedAt = new Date().toISOString();
+    currentSnapshot = withReliabilityMeta({
       appMeta: {
         ...sampleAppMeta,
-        updatedAt: new Date().toISOString(),
+        updatedAt: generatedAt,
         sourceLabel: liveCoverage > 0 ? "Live FRED/EIA snapshot" : "Cached sample snapshot",
         liveCoverage,
         marketOpen: isUSMarketOpen(new Date()),
@@ -189,33 +227,49 @@ async function refreshSnapshot(force = false) {
       scenarioDefaults,
       alerts: buildAlerts(mergedSeries, liveCoverage === 0),
       cache: {
-        generatedAt: new Date().toISOString(),
+        generatedAt,
         liveCoverage,
         marketOpen: isUSMarketOpen(new Date()),
       },
-    };
+    }, { attemptedAt });
 
     await writeCachedSnapshot(currentSnapshot);
     return currentSnapshot;
   } catch (error) {
     const cachedSnapshot = (await readCachedSnapshot()) ?? currentSnapshot ?? buildSampleSnapshot(String(error?.message || "Unknown error"));
+    const refreshError = String(error?.message || error);
     cachedSnapshot.appMeta = {
       ...cachedSnapshot.appMeta,
-      updatedAt: new Date().toISOString(),
       sourceLabel: cachedSnapshot.appMeta?.sourceLabel || "Cached sample snapshot",
-      statusNote: `Refresh failed: ${String(error?.message || error)}`,
-      refreshError: String(error?.message || error),
+      statusNote: `Refresh failed: ${refreshError}`,
+      refreshError,
     };
     cachedSnapshot.alerts = [
       {
         severity: "high",
         title: "Live refresh failed",
-        message: `The backend could not refresh live market data: ${String(error?.message || error)}. The dashboard is serving the most recent cache or sample fallback.`,
+        message: `The backend could not refresh live market data: ${refreshError}. The dashboard is serving the most recent cache or sample fallback.`,
       },
       ...(cachedSnapshot.alerts || []),
     ];
-    currentSnapshot = cachedSnapshot;
+    currentSnapshot = withReliabilityMeta(cachedSnapshot, { attemptedAt, refreshError });
     return currentSnapshot;
+  }
+}
+
+async function fetchWithTimeout(url, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 }
 
@@ -267,7 +321,7 @@ async function fetchFredSeries(seriesId) {
   url.searchParams.set("sort_order", "asc");
   url.searchParams.set("limit", "45");
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   const payload = await response.json();
 
   if (!response.ok || payload?.error_code) {
@@ -284,7 +338,7 @@ async function fetchEiaSeries(seriesId) {
   url.searchParams.set("api_key", EIA_API_KEY);
   url.searchParams.set("series_id", seriesId);
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url);
   const payload = await response.json();
 
   if (!response.ok || payload?.error) {

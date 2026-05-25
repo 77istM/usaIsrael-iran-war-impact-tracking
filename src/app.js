@@ -8,14 +8,21 @@ import {
 } from "./data.js";
 
 function createFallbackDashboardData() {
+  const nowIso = new Date().toISOString();
   return {
     appMeta: {
       ...sampleAppMeta,
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
+      dataAsOf: nowIso,
+      lastRefreshAttemptAt: nowIso,
       sourceLabel: "Sample data",
       liveCoverage: 0,
       marketOpen: false,
       refreshCadenceMinutes: 120,
+      staleThresholdMinutes: 240,
+      snapshotAgeMinutes: 0,
+      staleData: false,
+      reliabilityNote: "Snapshot age is 0 minutes.",
       statusNote: "Sample data loaded while the backend warms up.",
     },
     seriesCatalog: sampleSeriesCatalog,
@@ -155,6 +162,19 @@ function seriesScale(values, width, height, padding = 26) {
   });
 }
 
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function rectanglesOverlap(a, b, padding = 8) {
+  return !(
+    a.x + a.width + padding <= b.x
+    || b.x + b.width + padding <= a.x
+    || a.y + a.height + padding <= b.y
+    || b.y + b.height + padding <= a.y
+  );
+}
+
 function renderKpis() {
   const data = getDashboardData();
   const kpiGrid = $("#kpi-grid");
@@ -277,7 +297,112 @@ function renderTrendChart() {
   dot.setAttribute("stroke-width", "4");
   svg.appendChild(dot);
 
+  const cursorLine = createSvgEl("line");
+  cursorLine.setAttribute("class", "trend-cursor-line");
+  cursorLine.setAttribute("y1", padding.toString());
+  cursorLine.setAttribute("y2", (height - padding).toString());
+  cursorLine.setAttribute("x1", latestPoint.x.toString());
+  cursorLine.setAttribute("x2", latestPoint.x.toString());
+  cursorLine.setAttribute("stroke", "rgba(255,255,255,0.25)");
+  cursorLine.setAttribute("stroke-width", "1");
+  cursorLine.setAttribute("stroke-dasharray", "3 4");
+  cursorLine.setAttribute("opacity", "0");
+  svg.appendChild(cursorLine);
+
+  const hoverDot = createSvgEl("circle");
+  hoverDot.setAttribute("class", "trend-hover-dot");
+  hoverDot.setAttribute("r", "7");
+  hoverDot.setAttribute("fill", selected.accent);
+  hoverDot.setAttribute("stroke", "#06111c");
+  hoverDot.setAttribute("stroke-width", "4");
+  hoverDot.setAttribute("opacity", "0");
+  svg.appendChild(hoverDot);
+
+  const hitArea = createSvgEl("rect");
+  hitArea.setAttribute("x", padding.toString());
+  hitArea.setAttribute("y", padding.toString());
+  hitArea.setAttribute("width", (width - padding * 2).toString());
+  hitArea.setAttribute("height", (height - padding * 2).toString());
+  hitArea.setAttribute("fill", "transparent");
+  hitArea.setAttribute("class", "trend-hit-area");
+  svg.appendChild(hitArea);
+
+  const tooltip = document.createElement("div");
+  tooltip.className = "trend-tooltip";
+  tooltip.hidden = true;
+
+  const observationText = (index) => `Observation ${index + 1}/${points.length}`;
+
+  const showTooltip = (index) => {
+    const point = points[index];
+    if (!point) {
+      return;
+    }
+
+    const xPercent = point.x / width;
+    const yPercent = point.y / height;
+    const xPx = xPercent * container.clientWidth;
+    const yPx = yPercent * container.clientHeight;
+
+    cursorLine.setAttribute("x1", point.x.toString());
+    cursorLine.setAttribute("x2", point.x.toString());
+    cursorLine.setAttribute("opacity", "1");
+
+    hoverDot.setAttribute("cx", point.x.toString());
+    hoverDot.setAttribute("cy", point.y.toString());
+    hoverDot.setAttribute("opacity", "1");
+
+    tooltip.hidden = false;
+    tooltip.innerHTML = `
+      <div class="trend-tooltip-title">${selected.label}</div>
+      <div class="trend-tooltip-value">${selected.format(point.value)}</div>
+      <div class="trend-tooltip-meta">${observationText(index)}</div>
+    `;
+
+    const boundedX = clamp(xPx, 24, Math.max(24, container.clientWidth - 24));
+    const boundedY = clamp(yPx, 20, Math.max(20, container.clientHeight - 20));
+    tooltip.style.left = `${boundedX}px`;
+    tooltip.style.top = `${boundedY}px`;
+  };
+
+  const hideTooltip = () => {
+    cursorLine.setAttribute("opacity", "0");
+    hoverDot.setAttribute("opacity", "0");
+    tooltip.hidden = true;
+  };
+
+  const nearestIndexFromClientX = (clientX) => {
+    const rect = svg.getBoundingClientRect();
+    const normalizedX = clamp(clientX - rect.left, 0, rect.width);
+    const ratio = rect.width > 0 ? normalizedX / rect.width : 0;
+    const projectedX = ratio * width;
+    const step = (width - padding * 2) / Math.max(points.length - 1, 1);
+    return clamp(Math.round((projectedX - padding) / step), 0, points.length - 1);
+  };
+
+  hitArea.addEventListener("pointermove", (event) => {
+    showTooltip(nearestIndexFromClientX(event.clientX));
+  });
+  hitArea.addEventListener("pointerleave", hideTooltip);
+
+  points.forEach((point, index) => {
+    const target = createSvgEl("circle");
+    target.setAttribute("class", "trend-point-target");
+    target.setAttribute("cx", point.x.toString());
+    target.setAttribute("cy", point.y.toString());
+    target.setAttribute("r", "10");
+    target.setAttribute("fill", "transparent");
+    target.setAttribute("tabindex", "0");
+    target.setAttribute("aria-label", `${selected.label} ${selected.format(point.value)} at ${observationText(index)}`);
+    target.addEventListener("focus", () => showTooltip(index));
+    target.addEventListener("blur", hideTooltip);
+    target.addEventListener("mouseenter", () => showTooltip(index));
+    target.addEventListener("mouseleave", hideTooltip);
+    svg.appendChild(target);
+  });
+
   container.appendChild(svg);
+  container.appendChild(tooltip);
 }
 
 function renderSignalSummary() {
@@ -500,24 +625,113 @@ function renderWorldMap() {
   });
   svg.appendChild(border);
 
-  data.regionExposure.forEach((region) => {
-    const group = createSvgEl("g");
+  const mapBounds = {
+    left: 34,
+    top: 34,
+    right: 966,
+    bottom: 486,
+  };
+
+  const placedBoxes = [];
+  const layoutByRegionName = new Map();
+  const orderedForPlacement = [...data.regionExposure].sort((left, right) => right.score - left.score);
+
+  orderedForPlacement.forEach((region) => {
     const radius = 18 + region.score / 7;
     const labelWidth = Math.max(150, region.name.length * 10.5 + 40);
     const labelHeight = 44;
-    const labelX = region.x - labelWidth / 2;
-    const labelY = Math.max(42, region.y - radius - labelHeight - 14);
+    const candidates = [
+      { x: region.x - labelWidth / 2, y: region.y - radius - labelHeight - 16 },
+      { x: region.x + radius + 10, y: region.y - labelHeight / 2 },
+      { x: region.x - labelWidth - radius - 10, y: region.y - labelHeight / 2 },
+      { x: region.x - labelWidth / 2, y: region.y + radius + 12 },
+      { x: region.x + 16, y: region.y - radius - labelHeight - 20 },
+      { x: region.x - labelWidth - 16, y: region.y - radius - labelHeight - 20 },
+    ];
+
+    let selectedRect = null;
+    for (const candidate of candidates) {
+      const rect = {
+        x: clamp(candidate.x, mapBounds.left, mapBounds.right - labelWidth),
+        y: clamp(candidate.y, mapBounds.top, mapBounds.bottom - labelHeight),
+        width: labelWidth,
+        height: labelHeight,
+      };
+
+      const hasCollision = placedBoxes.some((placed) => rectanglesOverlap(rect, placed));
+      if (!hasCollision) {
+        selectedRect = rect;
+        break;
+      }
+    }
+
+    if (!selectedRect) {
+      const fallback = candidates[0];
+      selectedRect = {
+        x: clamp(fallback.x, mapBounds.left, mapBounds.right - labelWidth),
+        y: clamp(fallback.y, mapBounds.top, mapBounds.bottom - labelHeight),
+        width: labelWidth,
+        height: labelHeight,
+      };
+    }
+
+    layoutByRegionName.set(region.name, {
+      radius,
+      labelX: selectedRect.x,
+      labelY: selectedRect.y,
+      labelWidth,
+      labelHeight,
+    });
+    placedBoxes.push(selectedRect);
+  });
+
+  data.regionExposure.forEach((region) => {
+    const layout = layoutByRegionName.get(region.name);
+    const group = createSvgEl("g");
+    group.setAttribute("class", "map-region");
+    group.setAttribute("tabindex", "0");
+    group.setAttribute("role", "group");
+
+    const radius = layout?.radius ?? 24;
+    const labelWidth = layout?.labelWidth ?? 160;
+    const labelHeight = layout?.labelHeight ?? 44;
+    const labelX = layout?.labelX ?? clamp(region.x - labelWidth / 2, mapBounds.left, mapBounds.right - labelWidth);
+    const labelY = layout?.labelY ?? clamp(region.y - radius - labelHeight - 14, mapBounds.top, mapBounds.bottom - labelHeight);
+
+    const labelCenterX = labelX + labelWidth / 2;
+    const labelCenterY = labelY + labelHeight / 2;
+    let connectorStartX = labelCenterX;
+    let connectorStartY = labelY + labelHeight;
+
+    if (region.y < labelY) {
+      connectorStartY = labelY;
+    }
+    if (region.x < labelX) {
+      connectorStartX = labelX;
+      connectorStartY = labelCenterY;
+    } else if (region.x > labelX + labelWidth) {
+      connectorStartX = labelX + labelWidth;
+      connectorStartY = labelCenterY;
+    }
+
+    const title = createSvgEl("title");
+    title.textContent = `${region.name}: ${region.score}/100 stress`;
+
+    const description = createSvgEl("desc");
+    description.textContent = region.impact;
 
     const connector = createSvgEl("line");
-    connector.setAttribute("x1", region.x.toString());
+    connector.setAttribute("class", "map-connector");
+    connector.setAttribute("x1", connectorStartX.toString());
     connector.setAttribute("x2", region.x.toString());
-    connector.setAttribute("y1", (labelY + labelHeight).toString());
-    connector.setAttribute("y2", (region.y - radius - 6).toString());
+    connector.setAttribute("y1", connectorStartY.toString());
+    connector.setAttribute("y2", region.y.toString());
     connector.setAttribute("stroke", region.color);
     connector.setAttribute("stroke-opacity", "0.35");
     connector.setAttribute("stroke-width", "1.5");
 
     const bubble = createSvgEl("circle");
+    bubble.setAttribute("class", "map-bubble");
     bubble.setAttribute("cx", region.x.toString());
     bubble.setAttribute("cy", region.y.toString());
     bubble.setAttribute("r", radius.toString());
@@ -527,6 +741,7 @@ function renderWorldMap() {
     bubble.setAttribute("stroke-width", "2");
 
     const pulse = createSvgEl("circle");
+  pulse.setAttribute("class", "map-pulse");
     pulse.setAttribute("cx", region.x.toString());
     pulse.setAttribute("cy", region.y.toString());
     pulse.setAttribute("r", (radius + 10).toString());
@@ -536,6 +751,7 @@ function renderWorldMap() {
     pulse.setAttribute("stroke-width", "6");
 
     const labelBox = createSvgEl("rect");
+  labelBox.setAttribute("class", "map-label-box");
     labelBox.setAttribute("x", labelX.toString());
     labelBox.setAttribute("y", labelY.toString());
     labelBox.setAttribute("width", labelWidth.toString());
@@ -546,6 +762,7 @@ function renderWorldMap() {
     labelBox.setAttribute("stroke-width", "1.2");
 
     const label = createSvgEl("text");
+  label.setAttribute("class", "map-label-title");
     label.setAttribute("x", region.x.toString());
     label.setAttribute("y", (labelY + 19).toString());
     label.setAttribute("fill", "#edf4ff");
@@ -555,6 +772,7 @@ function renderWorldMap() {
     label.textContent = region.name;
 
     const sub = createSvgEl("text");
+  sub.setAttribute("class", "map-label-subtitle");
     sub.setAttribute("x", region.x.toString());
     sub.setAttribute("y", (labelY + 35).toString());
     sub.setAttribute("fill", "#9bb0d3");
@@ -562,7 +780,14 @@ function renderWorldMap() {
     sub.setAttribute("text-anchor", "middle");
     sub.textContent = `${region.score}/100 stress`;
 
-    group.append(connector, pulse, bubble, labelBox, label, sub);
+    const activate = () => group.classList.add("active");
+    const deactivate = () => group.classList.remove("active");
+    group.addEventListener("mouseenter", activate);
+    group.addEventListener("mouseleave", deactivate);
+    group.addEventListener("focus", activate);
+    group.addEventListener("blur", deactivate);
+
+    group.append(title, description, connector, pulse, bubble, labelBox, label, sub);
     svg.appendChild(group);
   });
 }
@@ -699,10 +924,16 @@ function renderMeta() {
   const dataStatus = $("#data-status");
   const dashboardState = $("#dashboard-state");
   const refreshButton = $("#refresh-data");
-  const updatedAt = new Date(data.appMeta.updatedAt);
+  const updatedAt = new Date(data.appMeta.dataAsOf || data.appMeta.updatedAt);
   $("#last-updated").textContent = `${formatDate.format(updatedAt)} at ${formatTime.format(updatedAt)}`;
   $("#risk-stance").textContent = data.appMeta.riskStance || "Elevated";
   $("#risk-note").textContent = data.appMeta.statusNote || data.appMeta.riskNote || "Oil, rates, and volatility are elevated versus baseline.";
+
+  const snapshotAgeMinutes = Number(data.appMeta.snapshotAgeMinutes || 0);
+  const staleThresholdMinutes = Number(data.appMeta.staleThresholdMinutes || 0);
+  const staleData = Boolean(data.appMeta.staleData);
+  const reliabilityNote = data.appMeta.reliabilityNote || "";
+  const refreshError = data.appMeta.refreshError || "";
 
   dataStatus.classList.remove("pill-live", "pill-warning", "pill-error");
   if (state.ui.lastError) {
@@ -720,10 +951,20 @@ function renderMeta() {
     dataStatus.textContent = "Refreshing snapshot";
     dashboardState.textContent = "Refresh in progress. Values will update when the request completes.";
     dashboardState.dataset.state = "loading";
+  } else if (staleData) {
+    dataStatus.classList.add("pill-warning");
+    dataStatus.textContent = "Snapshot may be stale";
+    dashboardState.textContent = `${reliabilityNote} Last refresh did not produce fresh data.`;
+    dashboardState.dataset.state = "warning";
+  } else if (refreshError) {
+    dataStatus.classList.add("pill-warning");
+    dataStatus.textContent = data.appMeta.sourceLabel || "Cached snapshot";
+    dashboardState.textContent = `Last refresh warning: ${refreshError}. ${reliabilityNote}`;
+    dashboardState.dataset.state = "warning";
   } else {
     dataStatus.classList.add("pill-live");
     dataStatus.textContent = data.appMeta.sourceLabel || "Sample data";
-    dashboardState.textContent = data.appMeta.statusNote || "Latest available snapshot is active.";
+    dashboardState.textContent = `${data.appMeta.statusNote || "Latest available snapshot is active."} ${snapshotAgeMinutes >= 0 ? `Age: ${snapshotAgeMinutes}m${staleThresholdMinutes ? ` (stale at ${staleThresholdMinutes}m)` : ""}.` : ""}`.trim();
     dashboardState.dataset.state = "ready";
   }
 
