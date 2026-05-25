@@ -70,9 +70,34 @@ function mergeDashboardData(payload) {
   };
 }
 
+const SERIES_STORAGE_KEY = "war-impact:selected-series";
+
+function readStoredSeriesId() {
+  try {
+    return window.localStorage.getItem(SERIES_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistSelectedSeriesId(seriesId) {
+  try {
+    window.localStorage.setItem(SERIES_STORAGE_KEY, seriesId);
+  } catch {
+    // Ignore storage errors so rendering still works in restricted contexts.
+  }
+}
+
+const initialStoredSeriesId = readStoredSeriesId();
+
 const state = {
-  selectedSeriesId: sampleSeriesCatalog[0].id,
+  selectedSeriesId: initialStoredSeriesId || sampleSeriesCatalog[0].id,
   dashboardData: createFallbackDashboardData(),
+  ui: {
+    isLoading: true,
+    isRefreshing: false,
+    lastError: "",
+  },
 };
 
 const formatDate = new Intl.DateTimeFormat(undefined, {
@@ -151,6 +176,7 @@ function renderKpis() {
     `;
     card.addEventListener("click", () => {
       state.selectedSeriesId = series.id;
+      persistSelectedSeriesId(series.id);
       renderDashboard();
     });
     kpiGrid.appendChild(card);
@@ -670,11 +696,41 @@ function renderAlerts() {
 
 function renderMeta() {
   const data = getDashboardData();
+  const dataStatus = $("#data-status");
+  const dashboardState = $("#dashboard-state");
+  const refreshButton = $("#refresh-data");
   const updatedAt = new Date(data.appMeta.updatedAt);
   $("#last-updated").textContent = `${formatDate.format(updatedAt)} at ${formatTime.format(updatedAt)}`;
   $("#risk-stance").textContent = data.appMeta.riskStance || "Elevated";
   $("#risk-note").textContent = data.appMeta.statusNote || data.appMeta.riskNote || "Oil, rates, and volatility are elevated versus baseline.";
-  $("#data-status").textContent = data.appMeta.sourceLabel || "Sample data";
+
+  dataStatus.classList.remove("pill-live", "pill-warning", "pill-error");
+  if (state.ui.lastError) {
+    dataStatus.classList.add("pill-error");
+    dataStatus.textContent = "Fallback snapshot in use";
+    dashboardState.textContent = state.ui.lastError;
+    dashboardState.dataset.state = "error";
+  } else if (state.ui.isLoading) {
+    dataStatus.classList.add("pill-warning");
+    dataStatus.textContent = "Loading live data";
+    dashboardState.textContent = "Fetching latest snapshot from the backend...";
+    dashboardState.dataset.state = "loading";
+  } else if (state.ui.isRefreshing) {
+    dataStatus.classList.add("pill-warning");
+    dataStatus.textContent = "Refreshing snapshot";
+    dashboardState.textContent = "Refresh in progress. Values will update when the request completes.";
+    dashboardState.dataset.state = "loading";
+  } else {
+    dataStatus.classList.add("pill-live");
+    dataStatus.textContent = data.appMeta.sourceLabel || "Sample data";
+    dashboardState.textContent = data.appMeta.statusNote || "Latest available snapshot is active.";
+    dashboardState.dataset.state = "ready";
+  }
+
+  const isBusy = state.ui.isLoading || state.ui.isRefreshing;
+  refreshButton.disabled = isBusy;
+  refreshButton.setAttribute("aria-busy", isBusy ? "true" : "false");
+  refreshButton.textContent = state.ui.isRefreshing ? "Refreshing..." : "Refresh now";
 }
 
 function seedScenarioInputs() {
@@ -708,17 +764,64 @@ async function loadLiveDashboardData() {
 
     const payload = await response.json();
     state.dashboardData = mergeDashboardData(payload);
+    state.ui.lastError = "";
+    state.ui.isLoading = false;
     if (!state.dashboardData.seriesCatalog.some((series) => series.id === state.selectedSeriesId)) {
       state.selectedSeriesId = state.dashboardData.seriesCatalog[0].id;
+      persistSelectedSeriesId(state.selectedSeriesId);
     }
     renderDashboard();
   } catch {
     state.dashboardData = createFallbackDashboardData();
+    state.ui.isLoading = false;
+    state.ui.lastError = "Live fetch failed. Showing fallback data so the dashboard remains usable.";
+    if (!state.dashboardData.seriesCatalog.some((series) => series.id === state.selectedSeriesId)) {
+      state.selectedSeriesId = state.dashboardData.seriesCatalog[0].id;
+      persistSelectedSeriesId(state.selectedSeriesId);
+    }
     renderDashboard();
   }
 }
 
+async function refreshDashboardData() {
+  if (state.ui.isLoading || state.ui.isRefreshing) {
+    return;
+  }
+
+  state.ui.isRefreshing = true;
+  renderMeta();
+  try {
+    const response = await fetch("/api/refresh", { method: "POST" });
+    if (!response.ok) {
+      throw new Error(`Refresh request failed with ${response.status}`);
+    }
+
+    const payload = await response.json();
+    state.dashboardData = mergeDashboardData(payload);
+    state.ui.lastError = "";
+    if (!state.dashboardData.seriesCatalog.some((series) => series.id === state.selectedSeriesId)) {
+      state.selectedSeriesId = state.dashboardData.seriesCatalog[0].id;
+      persistSelectedSeriesId(state.selectedSeriesId);
+    }
+    renderDashboard();
+  } catch {
+    state.ui.lastError = "Manual refresh failed. The dashboard is still showing the most recent snapshot.";
+    renderMeta();
+  } finally {
+    state.ui.isRefreshing = false;
+    renderMeta();
+  }
+}
+
+function bindRefreshButton() {
+  const refreshButton = $("#refresh-data");
+  refreshButton.addEventListener("click", () => {
+    void refreshDashboardData();
+  });
+}
+
 seedScenarioInputs();
 bindScenarioInputs();
+bindRefreshButton();
 renderDashboard();
 void loadLiveDashboardData();
