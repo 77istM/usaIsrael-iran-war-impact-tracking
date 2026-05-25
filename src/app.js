@@ -1,15 +1,78 @@
 import {
-  appMeta,
-  getLatestPoints,
-  regionExposure,
-  scenarioDefaults,
-  seriesCatalog,
-  sourceNotes,
-  timelineEvents,
+  appMeta as sampleAppMeta,
+  regionExposure as sampleRegionExposure,
+  scenarioDefaults as sampleScenarioDefaults,
+  seriesCatalog as sampleSeriesCatalog,
+  sourceNotes as sampleSourceNotes,
+  timelineEvents as sampleTimelineEvents,
 } from "./data.js";
 
+function createFallbackDashboardData() {
+  return {
+    appMeta: {
+      ...sampleAppMeta,
+      updatedAt: new Date().toISOString(),
+      sourceLabel: "Sample data",
+      liveCoverage: 0,
+      marketOpen: false,
+      refreshCadenceMinutes: 120,
+      statusNote: "Sample data loaded while the backend warms up.",
+    },
+    seriesCatalog: sampleSeriesCatalog,
+    regionExposure: sampleRegionExposure,
+    timelineEvents: sampleTimelineEvents,
+    sourceNotes: sampleSourceNotes,
+    scenarioDefaults: sampleScenarioDefaults,
+    alerts: [],
+  };
+}
+
+function latestFromValues(values) {
+  const current = values[values.length - 1];
+  const previous = values[values.length - 2] ?? current;
+  const change = current - previous;
+  return {
+    current,
+    previous,
+    change,
+    delta: change,
+    percent: previous ? (change / previous) * 100 : 0,
+  };
+}
+
+function mergeDashboardData(payload) {
+  const fallback = createFallbackDashboardData();
+  const liveById = new Map((payload?.seriesCatalog || []).map((series) => [series.id, series]));
+  const mergedSeriesCatalog = fallback.seriesCatalog.map((series) => {
+    const liveSeries = liveById.get(series.id);
+    return {
+      ...series,
+      ...(liveSeries || {}),
+      values: (liveSeries?.values?.length ? liveSeries.values : series.values).slice(-45),
+      source: liveSeries?.source || "sample",
+      sourceSeriesId: liveSeries?.sourceSeriesId || null,
+      format: series.format,
+    };
+  });
+
+  return {
+    appMeta: {
+      ...fallback.appMeta,
+      ...(payload?.appMeta || {}),
+      updatedAt: payload?.appMeta?.updatedAt || fallback.appMeta.updatedAt,
+    },
+    seriesCatalog: mergedSeriesCatalog,
+    regionExposure: payload?.regionExposure || fallback.regionExposure,
+    timelineEvents: payload?.timelineEvents || fallback.timelineEvents,
+    sourceNotes: payload?.sourceNotes || fallback.sourceNotes,
+    scenarioDefaults: payload?.scenarioDefaults || fallback.scenarioDefaults,
+    alerts: payload?.alerts || [],
+  };
+}
+
 const state = {
-  selectedSeriesId: seriesCatalog[0].id,
+  selectedSeriesId: sampleSeriesCatalog[0].id,
+  dashboardData: createFallbackDashboardData(),
 };
 
 const formatDate = new Intl.DateTimeFormat(undefined, {
@@ -36,6 +99,17 @@ function createSvgEl(tagName) {
   return document.createElementNS("http://www.w3.org/2000/svg", tagName);
 }
 
+function getDashboardData() {
+  return state.dashboardData;
+}
+
+function getLatestPoints(seriesCatalog) {
+  return seriesCatalog.map((series) => ({
+    ...series,
+    latest: latestFromValues(series.values),
+  }));
+}
+
 function seriesScale(values, width, height, padding = 26) {
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -50,10 +124,11 @@ function seriesScale(values, width, height, padding = 26) {
 }
 
 function renderKpis() {
+  const data = getDashboardData();
   const kpiGrid = $("#kpi-grid");
   kpiGrid.innerHTML = "";
 
-  getLatestPoints().forEach((series) => {
+  getLatestPoints(data.seriesCatalog).forEach((series) => {
     const change = series.latest.delta;
     const selected = series.id === state.selectedSeriesId;
     const card = document.createElement("button");
@@ -76,7 +151,8 @@ function renderKpis() {
 }
 
 function renderTrendChart() {
-  const selected = seriesCatalog.find((series) => series.id === state.selectedSeriesId) ?? seriesCatalog[0];
+  const data = getDashboardData();
+  const selected = data.seriesCatalog.find((series) => series.id === state.selectedSeriesId) ?? data.seriesCatalog[0];
   $("#chart-title").textContent = `${selected.label} trend`;
   $("#chart-legend").innerHTML = `
     <span class="pill"><span class="legend-dot" style="background:${selected.color}"></span>${selected.label}</span>
@@ -172,7 +248,8 @@ function renderTrendChart() {
 }
 
 function renderSignalSummary() {
-  const selected = getLatestPoints().find((series) => series.id === state.selectedSeriesId) ?? getLatestPoints()[0];
+  const data = getDashboardData();
+  const selected = getLatestPoints(data.seriesCatalog).find((series) => series.id === state.selectedSeriesId) ?? getLatestPoints(data.seriesCatalog)[0];
   const latest = selected.latest;
   const summary = [
     {
@@ -203,6 +280,7 @@ function renderSignalSummary() {
 }
 
 function renderWorldMap() {
+  const data = getDashboardData();
   const svg = $("#world-map");
   svg.innerHTML = "";
 
@@ -236,7 +314,7 @@ function renderWorldMap() {
     svg.appendChild(parallel);
   }
 
-  regionExposure.forEach((region) => {
+  data.regionExposure.forEach((region) => {
     const group = createSvgEl("g");
     const bubble = createSvgEl("circle");
     const radius = 18 + region.score / 7;
@@ -278,8 +356,9 @@ function renderWorldMap() {
 }
 
 function renderRegionList() {
+  const data = getDashboardData();
   const container = $("#region-list");
-  container.innerHTML = regionExposure
+  container.innerHTML = data.regionExposure
     .map(
       (region) => `
         <article class="region-item">
@@ -293,8 +372,9 @@ function renderRegionList() {
 }
 
 function renderSources() {
+  const data = getDashboardData();
   const container = $("#source-list");
-  container.innerHTML = sourceNotes
+  container.innerHTML = data.sourceNotes
     .map(
       (source) => `
         <article class="source-item">
@@ -307,8 +387,9 @@ function renderSources() {
 }
 
 function renderTimeline() {
+  const data = getDashboardData();
   const container = $("#timeline");
-  container.innerHTML = timelineEvents
+  container.innerHTML = data.timelineEvents
     .map(
       (event) => `
         <article class="timeline-item">
@@ -345,6 +426,7 @@ function calculateScenario() {
 }
 
 function renderScenario() {
+  const data = getDashboardData();
   const result = calculateScenario();
   const container = $("#scenario-results");
   container.innerHTML = `
@@ -369,22 +451,58 @@ function bindScenarioInputs() {
   });
 }
 
+function renderAlerts() {
+  const data = getDashboardData();
+  const container = $("#alerts-list");
+  if (!container) {
+    return;
+  }
+
+  const alerts = data.alerts || [];
+  if (alerts.length === 0) {
+    container.innerHTML = `
+      <article class="alert-item alert-low">
+        <h3 class="alert-title">No critical alerts</h3>
+        <p class="alert-copy">The current snapshot does not cross any alert thresholds.</p>
+      </article>
+    `;
+    return;
+  }
+
+  container.innerHTML = alerts
+    .map(
+      (alert) => `
+        <article class="alert-item alert-${alert.severity || "low"}">
+          <div class="alert-badge">${(alert.severity || "low").toUpperCase()}</div>
+          <h3 class="alert-title">${alert.title}</h3>
+          <p class="alert-copy">${alert.message}</p>
+        </article>
+      `,
+    )
+    .join("");
+}
+
 function renderMeta() {
-  $("#last-updated").textContent = `${formatDate.format(appMeta.updatedAt)} at ${formatTime.format(appMeta.updatedAt)}`;
-  $("#risk-stance").textContent = appMeta.riskStance;
-  $("#risk-note").textContent = appMeta.riskNote;
+  const data = getDashboardData();
+  const updatedAt = new Date(data.appMeta.updatedAt);
+  $("#last-updated").textContent = `${formatDate.format(updatedAt)} at ${formatTime.format(updatedAt)}`;
+  $("#risk-stance").textContent = data.appMeta.riskStance || "Elevated";
+  $("#risk-note").textContent = data.appMeta.statusNote || data.appMeta.riskNote || "Oil, rates, and volatility are elevated versus baseline.";
+  $("#data-status").textContent = data.appMeta.sourceLabel || "Sample data";
 }
 
 function seedScenarioInputs() {
-  $("#buffer-input").value = scenarioDefaults.buffer;
-  $("#shock-input").value = scenarioDefaults.shock;
-  $("#replacement-input").value = scenarioDefaults.replacement;
-  $("#demand-input").value = scenarioDefaults.demand;
-  $("#horizon-input").value = scenarioDefaults.horizon;
+  const data = getDashboardData();
+  $("#buffer-input").value = data.scenarioDefaults.buffer;
+  $("#shock-input").value = data.scenarioDefaults.shock;
+  $("#replacement-input").value = data.scenarioDefaults.replacement;
+  $("#demand-input").value = data.scenarioDefaults.demand;
+  $("#horizon-input").value = data.scenarioDefaults.horizon;
 }
 
 function renderDashboard() {
   renderMeta();
+  renderAlerts();
   renderKpis();
   renderTrendChart();
   renderSignalSummary();
@@ -395,6 +513,26 @@ function renderDashboard() {
   renderScenario();
 }
 
+async function loadLiveDashboardData() {
+  try {
+    const response = await fetch("/api/data", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`Data request failed with ${response.status}`);
+    }
+
+    const payload = await response.json();
+    state.dashboardData = mergeDashboardData(payload);
+    if (!state.dashboardData.seriesCatalog.some((series) => series.id === state.selectedSeriesId)) {
+      state.selectedSeriesId = state.dashboardData.seriesCatalog[0].id;
+    }
+    renderDashboard();
+  } catch {
+    state.dashboardData = createFallbackDashboardData();
+    renderDashboard();
+  }
+}
+
 seedScenarioInputs();
 bindScenarioInputs();
 renderDashboard();
+void loadLiveDashboardData();

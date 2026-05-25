@@ -19,7 +19,7 @@
           Monitor market stress, safe-haven flows, energy pressure, and regional spillovers in one place.
         </p>
         <div class="hero-meta">
-          <span class="pill pill-live">Sample data loaded</span>
+          <span class="pill pill-live" id="data-status">Sample data loaded</span>
           <span class="pill" id="last-updated"></span>
         </div>
       </div>
@@ -28,6 +28,16 @@
         <div class="stat-value" id="risk-stance">Elevated</div>
         <div class="stat-note" id="risk-note">Oil, rates, and volatility are all elevated versus baseline.</div>
       </div>
+    </section>
+
+    <section class="section card alerts-card">
+      <div class="section-heading compact">
+        <div>
+          <p class="eyebrow">Active alerts</p>
+          <h2>What needs attention now</h2>
+        </div>
+      </div>
+      <div id="alerts-list" class="alerts-list"></div>
     </section>
 
     <section class="section">

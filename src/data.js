@@ -28,6 +28,7 @@ const sp500 = buildSeries(4775, 24, -215);
 const nasdaq = buildSeries(16150, 90, -610);
 const dxy = buildSeries(103.6, 0.65, 2.3);
 const gold = buildSeries(2335, 14, 145);
+const eiaCrudeStocks = buildSeries(410.2, 4.5, -12.4);
 
 export const seriesCatalog = [
   {
@@ -120,6 +121,16 @@ export const seriesCatalog = [
     values: gold,
     format: (value) => `$${value.toFixed(0)}`,
   },
+  {
+    id: "eia-crude-stocks",
+    label: "US crude stocks",
+    unit: "mb",
+    color: "#ff9f6b",
+    accent: "#ffd6ad",
+    description: "Weekly U.S. crude inventory pressure from EIA",
+    values: eiaCrudeStocks,
+    format: (value) => `${value.toFixed(1)} mb`,
+  },
 ];
 
 export const regionExposure = [
@@ -180,9 +191,19 @@ export const timelineEvents = [
     copy: "Conflict starts and the first wave of market repricing pushes volatility and crude higher.",
   },
   {
+    date: "2026-03-01",
+    title: "Energy risk premium jumps",
+    copy: "Oil futures and tanker insurance begin repricing within the first market session after the conflict starts.",
+  },
+  {
     date: "2026-03-05",
-    title: "Shipping risk expands",
-    copy: "Insurance and rerouting costs rise as traders price in Gulf transit disruption.",
+    title: "Shipping disruption widens",
+    copy: "Rerouting through the Strait of Hormuz and nearby lanes raises transit times and freight costs.",
+  },
+  {
+    date: "2026-03-08",
+    title: "Sanctions deepen",
+    copy: "Secondary sanctions and payment frictions spread the shock from crude into banking, shipping, and trade settlement.",
   },
   {
     date: "2026-03-14",
@@ -190,9 +211,29 @@ export const timelineEvents = [
     copy: "Growth fears and safe-haven buying pull down the long-end yield as the curve shifts.",
   },
   {
+    date: "2026-03-18",
+    title: "Insurance costs surge",
+    copy: "Marine insurance premiums climb as carrier exposure to the Gulf and adjacent corridors increases.",
+  },
+  {
+    date: "2026-03-24",
+    title: "Crude inventory draws accelerate",
+    copy: "EIA stock data starts reflecting tighter availability, implying a larger supply cushion burn rate.",
+  },
+  {
     date: "2026-04-02",
     title: "Energy inflation spreads",
     copy: "Fuel costs begin to transmit into consumer prices, industrial input costs, and shipping margins.",
+  },
+  {
+    date: "2026-04-12",
+    title: "Sanctions widen to intermediaries",
+    copy: "Compliance pressure expands to logistics and payments firms, increasing transaction friction across regions.",
+  },
+  {
+    date: "2026-04-21",
+    title: "Spare capacity questioned",
+    copy: "Markets reprice the downside case for global spare capacity and the probability of a prolonged supply shock.",
   },
 ];
 

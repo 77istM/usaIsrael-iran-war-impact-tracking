@@ -11,16 +11,27 @@ The first implementation is a static, browser-ready MVP with:
 
 ## Run the prototype
 
-The current implementation is plain HTML, CSS, and JavaScript. No build step is required.
+The current implementation ships with a small Node server that serves the dashboard, refreshes live data, and caches the latest snapshot.
 
-1. Open `index.html` directly in a browser, or serve the folder with a local web server.
-2. For example, from the project folder you can run:
+1. Copy `.env.example` to `.env` at the repository root.
+2. Put your FRED key in `FRED_API_KEY` and, if you want the EIA series, add `EIA_API_KEY`.
+3. Start the server:
 
 ```powershell
-python -m http.server 8000
+npm start
 ```
 
-3. Open `http://localhost:8000`.
+4. Open `http://localhost:3000`.
+
+If you want the old static fallback, you can still open `index.html` directly, but live data and alerts only appear when the server is running.
+
+## Refresh cadence
+
+The backend refreshes every 15 minutes during US market hours and falls back to a slower cadence off-hours. API responses are cached to `.cache/dashboard-data.json` so the dashboard still has the latest usable snapshot if a provider is down.
+
+## Where to add your FRED key
+
+Add it to the root `.env` file as `FRED_API_KEY=...`. The server reads that environment variable on startup and uses it when calling FRED's observations endpoint.
 
 ## Files
 
@@ -28,10 +39,14 @@ python -m http.server 8000
 - `styles.css` - visual system and responsive layout.
 - `src/app.js` - dashboard rendering and scenario logic.
 - `src/data.js` - sample series, region exposure data, and source metadata.
+- `server.js` - live data fetcher, cache manager, and static file server.
+- `.cache/dashboard-data.json` - latest live or fallback snapshot written by the backend.
 
 ## How live data plugs in
 
 The first version uses sample data so the UI is usable before APIs are connected. Live data should be connected in the data loading layer inside `src/app.js` and replaced by a backend or server route when you are ready.
+
+The backend now exposes `/api/data`, `/api/alerts`, and `/api/refresh`. The frontend should fetch `/api/data` and use its cached series snapshots when available.
 
 Recommended free sources:
 
@@ -45,6 +60,21 @@ Recommended free sources:
 2. Store it in your environment as `FRED_API_KEY`.
 3. Fetch series through the FRED observations endpoint.
 4. Normalize the response into a common time-series shape before rendering.
+
+The backend currently uses these FRED series IDs:
+
+- `VIXCLS` for VIX.
+- `DGS2` and `DGS10` for 2Y and 10Y Treasury yields.
+- `DCOILWTICO` for WTI crude.
+- `DCOILBRENTEU` for Brent crude.
+- `SP500` for the S&P 500 index.
+- `NASDAQ100` or `NASDAQCOM` for the Nasdaq proxy.
+- `DTWEXBGS` for a broad dollar index proxy.
+- `GOLDAMGBD228NLBM` for gold.
+
+### EIA setup
+
+The backend also tries to pull one weekly crude inventory series from EIA using `PET.WCESTUS1.W`. If that series is unavailable, the app falls back to the cached or sample series and still renders the dashboard.
 
 Example series IDs:
 
