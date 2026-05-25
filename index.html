@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>War Impact Tracker</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="background-orb background-orb-one"></div>
+  <div class="background-orb background-orb-two"></div>
+
+  <main class="shell">
+    <section class="hero card">
+      <div class="hero-copy">
+        <p class="eyebrow">Economic impact monitor</p>
+        <h1>Track the macro shock from the Iran-USA war.</h1>
+        <p class="lede">
+          Monitor market stress, safe-haven flows, energy pressure, and regional spillovers in one place.
+        </p>
+        <div class="hero-meta">
+          <span class="pill pill-live">Sample data loaded</span>
+          <span class="pill" id="last-updated"></span>
+        </div>
+      </div>
+      <div class="hero-stat">
+        <div class="stat-label">Current risk stance</div>
+        <div class="stat-value" id="risk-stance">Elevated</div>
+        <div class="stat-note" id="risk-note">Oil, rates, and volatility are all elevated versus baseline.</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Critical indicators</p>
+          <h2>Latest market signals</h2>
+        </div>
+        <p class="section-copy">Click an indicator to focus the trend chart.</p>
+      </div>
+      <div class="kpi-grid" id="kpi-grid"></div>
+    </section>
+
+    <section class="section layout-two">
+      <div class="card chart-card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Trend view</p>
+            <h2 id="chart-title">VIX trend</h2>
+          </div>
+          <div class="chart-legend" id="chart-legend"></div>
+        </div>
+        <div id="trend-chart" class="trend-chart" aria-label="Trend chart"></div>
+      </div>
+
+      <div class="card insight-card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Signal summary</p>
+            <h2>What is moving now</h2>
+          </div>
+        </div>
+        <div id="signal-summary" class="signal-summary"></div>
+      </div>
+    </section>
+
+    <section class="section layout-two map-layout">
+      <div class="card map-card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">World stress map</p>
+            <h2>Where the shock is landing</h2>
+          </div>
+        </div>
+        <div class="map-wrap">
+          <svg id="world-map" viewBox="0 0 1000 520" role="img" aria-label="World stress map"></svg>
+        </div>
+      </div>
+
+      <div class="card region-card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Affected regions</p>
+            <h2>Exposure and mechanism</h2>
+          </div>
+        </div>
+        <div id="region-list" class="region-list"></div>
+      </div>
+    </section>
+
+    <section class="section layout-two">
+      <div class="card scenario-card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Oil buffer scenario</p>
+            <h2>When could the reserve run out?</h2>
+          </div>
+        </div>
+        <form id="scenario-form" class="scenario-form">
+          <label>
+            <span>Starting buffer, million barrels</span>
+            <input id="buffer-input" type="number" min="100" step="100" />
+          </label>
+          <label>
+            <span>Daily supply shock, million barrels/day</span>
+            <input id="shock-input" type="number" min="0" step="0.1" />
+          </label>
+          <label>
+            <span>Replacement flow, million barrels/day</span>
+            <input id="replacement-input" type="number" min="0" step="0.1" />
+          </label>
+          <label>
+            <span>Demand reduction, million barrels/day</span>
+            <input id="demand-input" type="number" min="0" step="0.1" />
+          </label>
+          <label>
+            <span>Scenario horizon, days</span>
+            <input id="horizon-input" type="number" min="7" step="1" />
+          </label>
+        </form>
+        <div class="scenario-results" id="scenario-results"></div>
+      </div>
+
+      <div class="card sources-card">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Data connections</p>
+            <h2>Free API and agent paths</h2>
+          </div>
+        </div>
+        <div id="source-list" class="source-list"></div>
+      </div>
+    </section>
+
+    <section class="section card timeline-card">
+      <div class="section-heading compact">
+        <div>
+          <p class="eyebrow">Event timeline</p>
+          <h2>Conflict and market milestones</h2>
+        </div>
+      </div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+  </main>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
