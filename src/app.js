@@ -99,6 +99,13 @@ function createSvgEl(tagName) {
   return document.createElementNS("http://www.w3.org/2000/svg", tagName);
 }
 
+function setSvgAttrs(element, attributes) {
+  Object.entries(attributes).forEach(([name, value]) => {
+    element.setAttribute(name, value);
+  });
+  return element;
+}
+
 function getDashboardData() {
   return state.dashboardData;
 }
@@ -284,40 +291,207 @@ function renderWorldMap() {
   const svg = $("#world-map");
   svg.innerHTML = "";
 
-  const globe = createSvgEl("circle");
-  globe.setAttribute("cx", "500");
-  globe.setAttribute("cy", "260");
-  globe.setAttribute("r", "220");
-  globe.setAttribute("fill", "rgba(103, 212, 255, 0.04)");
-  globe.setAttribute("stroke", "rgba(255,255,255,0.08)");
-  svg.appendChild(globe);
+  const defs = createSvgEl("defs");
 
-  for (let index = 0; index < 6; index += 1) {
-    const meridian = createSvgEl("line");
-    const x = 220 + index * 110;
-    meridian.setAttribute("x1", x.toString());
-    meridian.setAttribute("x2", x.toString());
-    meridian.setAttribute("y1", "70");
-    meridian.setAttribute("y2", "450");
-    meridian.setAttribute("stroke", "rgba(255,255,255,0.05)");
-    svg.appendChild(meridian);
-  }
+  const oceanGradient = createSvgEl("linearGradient");
+  setSvgAttrs(oceanGradient, {
+    id: "flat-world-ocean",
+    x1: "0%",
+    y1: "0%",
+    x2: "0%",
+    y2: "100%",
+  });
 
-  for (let index = 0; index < 4; index += 1) {
-    const parallel = createSvgEl("line");
-    const y = 120 + index * 85;
-    parallel.setAttribute("x1", "140");
-    parallel.setAttribute("x2", "860");
-    parallel.setAttribute("y1", y.toString());
-    parallel.setAttribute("y2", y.toString());
-    parallel.setAttribute("stroke", "rgba(255,255,255,0.05)");
-    svg.appendChild(parallel);
-  }
+  const oceanTop = createSvgEl("stop");
+  setSvgAttrs(oceanTop, {
+    offset: "0%",
+    "stop-color": "#10263d",
+    "stop-opacity": "1",
+  });
+
+  const oceanBottom = createSvgEl("stop");
+  setSvgAttrs(oceanBottom, {
+    offset: "100%",
+    "stop-color": "#07111d",
+    "stop-opacity": "1",
+  });
+
+  oceanGradient.append(oceanTop, oceanBottom);
+  defs.appendChild(oceanGradient);
+
+  const landGlow = createSvgEl("radialGradient");
+  setSvgAttrs(landGlow, {
+    id: "flat-world-glow",
+    cx: "50%",
+    cy: "45%",
+    r: "60%",
+  });
+
+  const glowCenter = createSvgEl("stop");
+  setSvgAttrs(glowCenter, {
+    offset: "0%",
+    "stop-color": "rgba(103, 212, 255, 0.18)",
+    "stop-opacity": "1",
+  });
+
+  const glowEdge = createSvgEl("stop");
+  setSvgAttrs(glowEdge, {
+    offset: "100%",
+    "stop-color": "rgba(103, 212, 255, 0)",
+    "stop-opacity": "1",
+  });
+
+  landGlow.append(glowCenter, glowEdge);
+  defs.appendChild(landGlow);
+  svg.appendChild(defs);
+
+  const frame = createSvgEl("rect");
+  setSvgAttrs(frame, {
+    x: "18",
+    y: "18",
+    width: "964",
+    height: "484",
+    rx: "32",
+    fill: "url(#flat-world-ocean)",
+    stroke: "rgba(255,255,255,0.08)",
+  });
+  svg.appendChild(frame);
+
+  const glow = createSvgEl("ellipse");
+  setSvgAttrs(glow, {
+    cx: "520",
+    cy: "250",
+    rx: "340",
+    ry: "190",
+    fill: "url(#flat-world-glow)",
+    opacity: "0.65",
+  });
+  svg.appendChild(glow);
+
+  const graticule = createSvgEl("g");
+  graticule.setAttribute("opacity", "0.9");
+
+  [120, 240, 360, 480, 600, 720, 840].forEach((x) => {
+    const line = createSvgEl("line");
+    setSvgAttrs(line, {
+      x1: String(x),
+      y1: "72",
+      x2: String(x),
+      y2: "448",
+      stroke: "rgba(255,255,255,0.045)",
+      "stroke-width": "1",
+    });
+    graticule.appendChild(line);
+  });
+
+  [108, 190, 272, 354, 436].forEach((y) => {
+    const line = createSvgEl("line");
+    setSvgAttrs(line, {
+      x1: "92",
+      y1: String(y),
+      x2: "908",
+      y2: String(y),
+      stroke: "rgba(255,255,255,0.045)",
+      "stroke-width": "1",
+    });
+    graticule.appendChild(line);
+  });
+
+  const equator = createSvgEl("line");
+  setSvgAttrs(equator, {
+    x1: "92",
+    y1: "272",
+    x2: "908",
+    y2: "272",
+    stroke: "rgba(103, 212, 255, 0.12)",
+    "stroke-width": "1.5",
+  });
+  graticule.appendChild(equator);
+
+  svg.appendChild(graticule);
+
+  const continents = [
+    {
+      d: "M78 132 L104 108 L143 92 L188 88 L230 100 L262 122 L284 150 L290 176 L278 196 L256 205 L226 198 L204 204 L178 215 L151 210 L130 196 L112 175 L94 158 L82 145 Z",
+      opacity: "0.11",
+    },
+    {
+      d: "M252 78 L276 68 L298 74 L292 92 L270 98 L250 90 Z",
+      opacity: "0.08",
+    },
+    {
+      d: "M242 244 L274 254 L292 280 L290 310 L278 344 L262 374 L246 386 L236 358 L240 326 L234 298 L228 270 Z",
+      opacity: "0.11",
+    },
+    {
+      d: "M466 124 L500 114 L540 120 L560 138 L552 156 L526 162 L500 156 L486 144 Z",
+      opacity: "0.09",
+    },
+    {
+      d: "M502 172 L540 180 L563 208 L561 246 L552 286 L535 326 L516 342 L498 320 L490 282 L494 240 L488 198 Z",
+      opacity: "0.12",
+    },
+    {
+      d: "M570 120 L622 108 L680 110 L740 124 L794 144 L836 164 L862 186 L854 208 L818 220 L778 214 L742 224 L706 218 L676 230 L640 222 L620 198 L600 186 L578 172 L558 154 Z",
+      opacity: "0.10",
+    },
+    {
+      d: "M700 212 L724 218 L740 242 L728 258 L704 248 L694 228 Z",
+      opacity: "0.08",
+    },
+    {
+      d: "M774 316 L804 304 L836 308 L852 324 L846 346 L822 356 L796 352 L780 336 Z",
+      opacity: "0.09",
+    },
+    {
+      d: "M594 188 L618 182 L640 192 L634 206 L612 210 L596 202 Z",
+      opacity: "0.08",
+    },
+  ];
+
+  continents.forEach((continent) => {
+    const land = createSvgEl("path");
+    setSvgAttrs(land, {
+      d: continent.d,
+      fill: "rgba(191, 220, 208, 0.12)",
+      "fill-opacity": continent.opacity,
+      stroke: "rgba(220, 236, 255, 0.14)",
+      "stroke-width": "1.2",
+      "stroke-linejoin": "round",
+    });
+    svg.appendChild(land);
+  });
+
+  const border = createSvgEl("rect");
+  setSvgAttrs(border, {
+    x: "18",
+    y: "18",
+    width: "964",
+    height: "484",
+    rx: "32",
+    fill: "none",
+    stroke: "rgba(255,255,255,0.05)",
+  });
+  svg.appendChild(border);
 
   data.regionExposure.forEach((region) => {
     const group = createSvgEl("g");
-    const bubble = createSvgEl("circle");
     const radius = 18 + region.score / 7;
+    const labelWidth = Math.max(150, region.name.length * 10.5 + 40);
+    const labelHeight = 44;
+    const labelX = region.x - labelWidth / 2;
+    const labelY = Math.max(42, region.y - radius - labelHeight - 14);
+
+    const connector = createSvgEl("line");
+    connector.setAttribute("x1", region.x.toString());
+    connector.setAttribute("x2", region.x.toString());
+    connector.setAttribute("y1", (labelY + labelHeight).toString());
+    connector.setAttribute("y2", (region.y - radius - 6).toString());
+    connector.setAttribute("stroke", region.color);
+    connector.setAttribute("stroke-opacity", "0.35");
+    connector.setAttribute("stroke-width", "1.5");
+
+    const bubble = createSvgEl("circle");
     bubble.setAttribute("cx", region.x.toString());
     bubble.setAttribute("cy", region.y.toString());
     bubble.setAttribute("r", radius.toString());
@@ -335,22 +509,34 @@ function renderWorldMap() {
     pulse.setAttribute("stroke-opacity", "0.15");
     pulse.setAttribute("stroke-width", "6");
 
+    const labelBox = createSvgEl("rect");
+    labelBox.setAttribute("x", labelX.toString());
+    labelBox.setAttribute("y", labelY.toString());
+    labelBox.setAttribute("width", labelWidth.toString());
+    labelBox.setAttribute("height", labelHeight.toString());
+    labelBox.setAttribute("rx", "12");
+    labelBox.setAttribute("fill", "rgba(6, 15, 25, 0.78)");
+    labelBox.setAttribute("stroke", `${region.color}88`);
+    labelBox.setAttribute("stroke-width", "1.2");
+
     const label = createSvgEl("text");
-    label.setAttribute("x", (region.x + radius + 12).toString());
-    label.setAttribute("y", (region.y - 6).toString());
+    label.setAttribute("x", region.x.toString());
+    label.setAttribute("y", (labelY + 19).toString());
     label.setAttribute("fill", "#edf4ff");
-    label.setAttribute("font-size", "20");
+    label.setAttribute("font-size", "17");
     label.setAttribute("font-weight", "700");
+    label.setAttribute("text-anchor", "middle");
     label.textContent = region.name;
 
     const sub = createSvgEl("text");
-    sub.setAttribute("x", (region.x + radius + 12).toString());
-    sub.setAttribute("y", (region.y + 18).toString());
+    sub.setAttribute("x", region.x.toString());
+    sub.setAttribute("y", (labelY + 35).toString());
     sub.setAttribute("fill", "#9bb0d3");
-    sub.setAttribute("font-size", "13");
+    sub.setAttribute("font-size", "12");
+    sub.setAttribute("text-anchor", "middle");
     sub.textContent = `${region.score}/100 stress`;
 
-    group.append(pulse, bubble, label, sub);
+    group.append(connector, pulse, bubble, labelBox, label, sub);
     svg.appendChild(group);
   });
 }
